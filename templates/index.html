@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <title>阪急ルート検索 (LIFF)</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- LIFF SDK -->
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+    <!-- SortableJS（ドラッグ並び替え用） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+            padding: 15px;
+            background: #f4f4f4;
+        }
+        .card { background: #fff; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+        select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: 1px solid #ccc; }
+        button { background: #06c755; color: white; font-weight: bold; }
+        .stop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #eee;
+            border-radius: 8px;
+            margin: 5px 0;
+            cursor: grab;
+        }
+
+        .delete-stop {
+            background: #ff4d4d;
+            border: none;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .delete-stop:active {
+            background: #cc0000;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<h2>阪急ルート検索（途中下車ドラッグ並び替え版）</h2>
+
+<div class="card">
+    <label>出発駅：</label>
+    <select id="startStation"></select>
+
+    <label>途中下車候補：</label>
+    <select id="stopCandidates" multiple size="6"></select>
+    <button onclick="addStops()">選択した駅を追加</button>
+
+    <label>途中下車（ドラッグで順番変更）：</label>
+    <div id="sortableStops" style="min-height:60px; background:#fafafa; border:1px solid #ddd; padding:10px; border-radius:8px;"></div>
+
+    <label>到着駅：</label>
+    <select id="goalStation"></select>
+
+    <button onclick="calculateRoute()">検索する</button>
+    <button id="sendMessageBtn" style="display:none; background:#1E90FF;">結果をLINEに送信</button>
+
+</div>
+
+<div id="result" class="card" style="display:none;"></div>
+
+<script>
+    let lastResultText = "";  // LINEに送るためのテキスト
+    /******************************************
+     * LIFF 初期化
+     *****************************************/
+    async function initLIFF() {
+        await liff.init({ liffId: "2008501171-EPnG284V" });
+        console.log("LIFF init 完了");
+    }
+
+    /******************************************
+     * SortableJS を初期化
+     *****************************************/
+    let sortable;
+    function setupSortable() {
+        sortable = Sortable.create(document.getElementById("sortableStops"), {
+            animation: 150,
+            ghostClass: "blue-background-class"
+        });
+    }
+
+    /******************************************
+     * 駅一覧取得
+     *****************************************/
+    async function loadStations() {
+        const stations = await fetch("/hankyu/stations").then(r => r.json());
+        stations.sort();
+
+        const startSel = document.getElementById("startStation");
+        const goalSel  = document.getElementById("goalStation");
+        const stopSel  = document.getElementById("stopCandidates");
+
+        stations.forEach(st => {
+            startSel.add(new Option(st, st));
+            goalSel.add(new Option(st, st));
+            stopSel.add(new Option(st, st));
+        });
+    }
+
+    /******************************************
+     * 途中下車リストに追加
+     *****************************************/
+    function addStops() {
+        const selected = Array.from(
+            document.getElementById("stopCandidates").selectedOptions
+        ).map(o => o.value);
+
+        const container = document.getElementById("sortableStops");
+
+        selected.forEach(st => {
+            const div = document.createElement("div");
+            div.className = "stop-item";
+            div.dataset.station = st;
+
+            div.innerHTML = `
+                <span>${st}</span>
+                <button class="delete-stop" onclick="removeStop(this)">×</button>
+            `;
+
+            container.appendChild(div);
+        });
+    }
+
+
+    /******************************************
+     * ルート検索
+     *****************************************/
+    async function calculateRoute() {
+        const start = document.getElementById("startStation").value;
+        const goal  = document.getElementById("goalStation").value;
+
+        // 並び替え後の並び順を取得
+        const stopDivs = document.querySelectorAll("#sortableStops .stop-item");
+        const stops = Array.from(stopDivs).map(div => div.dataset.station);
+
+        const url = `/hankyu/calc?start=${encodeURIComponent(start)}&goal=${encodeURIComponent(goal)}&stops=${encodeURIComponent(stops.join(","))}`;
+
+        const data = await fetch(url).then(r => r.json());
+
+        const box = document.getElementById("result");
+        box.style.display = "block";
+
+        if (data.error) {
+            box.innerHTML = `<b>エラー：</b> ${data.error}`;
+            return;
+        }
+
+        let html = `<h3>検索結果</h3>`;
+        html += `<p><b>旅程：</b> ${data.journey_order.join(" → ")}</p>`;
+        html += `<p><b>合計運賃：</b> ${data.total_fare} 円</p>`;
+        html += `<p><b>おすすめ：</b> ${data.recommendation}</p>`;
+
+        html += `<h4>区間詳細</h4>`;
+        data.details.forEach(d => {
+            html += `
+                <div style="margin-bottom:10px;">
+                    <b>${d.start} → ${d.goal}</b><br>
+                    経路：${d.route.join(" → ")}<br>
+                    区間数：${d.sections}<br>
+                    運賃：${d.fare}円
+                </div>
+            `;
+        });
+
+        box.innerHTML = html;
+            // LINEに送るテキスト形式（ユーザーに見やすい形）
+        let text = `【阪急ルート検索結果】
+
+        旅程：
+        ${data.journey_order.join(" → ")}
+
+        合計運賃：${data.total_fare}円
+        1日乗車券：${data.one_day_pass}円
+        おすすめ：${data.recommendation}
+
+        --- 区間詳細 ---
+        `;
+
+        data.details.forEach(d => {
+            text += `
+        ${d.start} → ${d.goal}
+        経路：${d.route.join(" → ")}
+        運賃：${d.fare}円
+        `;
+        });
+
+        lastResultText = text;
+
+        // 「LINEに送信」ボタンを表示
+        document.getElementById("sendMessageBtn").style.display = "block";
+
+    }
+    function removeStop(btn) {
+        const item = btn.parentElement;
+        item.remove();
+    }
+    
+    /******************************************
+     * 初期処理
+     *****************************************/
+    (async () => {
+        await initLIFF();
+        await loadStations();
+        setupSortable();
+    })();
+    
+    document.getElementById("sendMessageBtn").onclick = async () => {
+        try {
+            await liff.sendMessages([
+                {
+                    type: "text",
+                    text: lastResultText
+                }
+            ]);
+            alert("LINEに送信しました");
+        } catch (err) {
+            console.error("送信エラー:", err);
+            alert("送信に失敗しました（ログを確認）");
+        }
+    };
+
+</script>
+
+</body>
+</html>
