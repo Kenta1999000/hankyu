@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8" />
-    <title>阪急ルート検索 (LIFF)</title>
+    <title>阪急ルート検索（LIFF）</title>
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -31,7 +31,6 @@
             margin: 5px 0;
             cursor: grab;
         }
-
         .delete-stop {
             background: #ff4d4d;
             border: none;
@@ -43,28 +42,40 @@
             font-weight: bold;
             cursor: pointer;
         }
-
-        .delete-stop:active {
-            background: #cc0000;
-        }
-
+        .delete-stop:active { background: #cc0000; }
     </style>
 </head>
 
 <body>
 
-<h2>阪急ルート検索（途中下車ドラッグ並び替え版）</h2>
+<h2>阪急ルート検索（路線選択 + 途中下車並び替え）</h2>
 
 <div class="card">
+
+    <!-- ★ 出発駅（路線 → 駅） -->
+    <label>出発する路線：</label>
+    <select id="startLine" onchange="updateStartStations()"></select>
+
     <label>出発駅：</label>
     <select id="startStation"></select>
 
-    <label>途中下車候補：</label>
-    <select id="stopCandidates" multiple size="6"></select>
-    <button onclick="addStops()">選択した駅を追加</button>
+    <!-- ★ 途中下車（路線 → 駅追加 → 並び替え） -->
+    <label>途中下車の路線：</label>
+    <select id="stopLine" onchange="updateStopStations()"></select>
 
-    <label>途中下車（ドラッグで順番変更）：</label>
-    <div id="sortableStops" style="min-height:60px; background:#fafafa; border:1px solid #ddd; padding:10px; border-radius:8px;"></div>
+    <label>途中下車候補：</label>
+    <select id="stopCandidates" multiple size="5"></select>
+
+    <button onclick="addStops()">途中下車リストに追加</button>
+
+    <label>途中下車（ドラッグで順番変更・削除可）：</label>
+    <div id="sortableStops"
+         style="min-height:60px; background:#fafafa; border:1px solid #ddd; padding:10px; border-radius:8px;">
+    </div>
+
+    <!-- ★ 到着駅（路線 → 駅） -->
+    <label>到着する路線：</label>
+    <select id="goalLine" onchange="updateGoalStations()"></select>
 
     <label>到着駅：</label>
     <select id="goalStation"></select>
@@ -76,167 +87,197 @@
 
 <div id="result" class="card" style="display:none;"></div>
 
+
 <script>
-    let lastResultText = "";  // LINEに送るためのテキスト
-    /******************************************
-     * LIFF 初期化
-     *****************************************/
-    async function initLIFF() {
-        await liff.init({ liffId: "2008501171-EPnG284V" });
-        console.log("LIFF init 完了");
-    }
+/* ============================================
+   ★ 路線ごとの駅データ（駅重複OK）
+============================================ */
+const LINES = {
+    "神戸本線": ["大阪梅田","中津","十三","神崎川","園田","塚口","武庫之荘","西宮北口","夙川","芦屋川","岡本","御影","六甲","王子公園","春日野道","神戸三宮"],
+    "宝塚本線": ["大阪梅田","中津","十三","三国","庄内","服部天神","曽根","岡町","豊中","蛍池","石橋阪大前","池田","川西能勢口","雲雀丘花屋敷","山本","中山観音","売布神社","清荒神","宝塚"],
+    "京都本線": ["大阪梅田","中津","十三（京都線）","南方","崇禅寺","淡路","上新庄","相川","正雀","摂津市","南茨木","茨木市","総持寺","富田","高槻市","上牧","水無瀬","大山崎","長岡天神","西山天王山","桂","西京極","西院","大宮","烏丸","京都河原町"],
+    "今津線": ["宝塚","宝塚南口","逆瀬川","小林","仁川","甲東園","門戸厄神","西宮北口","阪神国道","今津"],
+    "箕面線": ["石橋阪大前","桜井","牧落","箕面"],
+    "千里線": ["天神橋筋六丁目","柴島","淡路","下新庄","吹田","豊津","江坂","南千里","千里山","関大前","北千里"],
+    "嵐山線": ["桂","上桂","松尾大社","嵐山"],
+    "伊丹線": ["塚口","稲野","新伊丹","伊丹"],
+    "甲陽線": ["西宮北口","苦楽園口","甲陽園"]
+};
 
-    /******************************************
-     * SortableJS を初期化
-     *****************************************/
-    let sortable;
-    function setupSortable() {
-        sortable = Sortable.create(document.getElementById("sortableStops"), {
-            animation: 150,
-            ghostClass: "blue-background-class"
-        });
-    }
+let lastResultText = "";
 
-    /******************************************
-     * 駅一覧取得
-     *****************************************/
-    async function loadStations() {
-        const stations = await fetch("/hankyu/stations").then(r => r.json());
-        stations.sort();
+/* ============================================
+   LIFF 初期化
+============================================ */
+async function initLIFF() {
+    await liff.init({ liffId: "2008501171-EPnG284V" });
+    console.log("LIFF init 完了");
+}
 
-        const startSel = document.getElementById("startStation");
-        const goalSel  = document.getElementById("goalStation");
-        const stopSel  = document.getElementById("stopCandidates");
+/* ============================================
+   Sortable 初期化
+============================================ */
+function setupSortable() {
+    Sortable.create(document.getElementById("sortableStops"), {
+        animation: 150,
+        ghostClass: "blue-background-class"
+    });
+}
 
-        stations.forEach(st => {
-            startSel.add(new Option(st, st));
-            goalSel.add(new Option(st, st));
-            stopSel.add(new Option(st, st));
-        });
-    }
+/* ============================================
+   路線一覧 → 路線プルダウン生成
+============================================ */
+function loadLines() {
+    const lines = Object.keys(LINES);
+    ["startLine", "stopLine", "goalLine"].forEach(id => {
+        const sel = document.getElementById(id);
+        lines.forEach(line => sel.add(new Option(line, line)));
+    });
 
-    /******************************************
-     * 途中下車リストに追加
-     *****************************************/
-    function addStops() {
-        const selected = Array.from(
-            document.getElementById("stopCandidates").selectedOptions
-        ).map(o => o.value);
+    updateStartStations();
+    updateStopStations();
+    updateGoalStations();
+}
 
-        const container = document.getElementById("sortableStops");
+/* ============================================
+   路線 → 駅プルダウン更新
+============================================ */
+function updateStartStations() {
+    const line = document.getElementById("startLine").value;
+    const sel  = document.getElementById("startStation");
+    sel.innerHTML = "";
+    LINES[line].forEach(st => sel.add(new Option(st, st)));
+}
 
-        selected.forEach(st => {
-            const div = document.createElement("div");
-            div.className = "stop-item";
-            div.dataset.station = st;
+function updateStopStations() {
+    const line = document.getElementById("stopLine").value;
+    const sel  = document.getElementById("stopCandidates");
+    sel.innerHTML = "";
+    LINES[line].forEach(st => sel.add(new Option(st, st)));
+}
 
-            div.innerHTML = `
-                <span>${st}</span>
-                <button class="delete-stop" onclick="removeStop(this)">×</button>
-            `;
+function updateGoalStations() {
+    const line = document.getElementById("goalLine").value;
+    const sel  = document.getElementById("goalStation");
+    sel.innerHTML = "";
+    LINES[line].forEach(st => sel.add(new Option(st, st)));
+}
 
-            container.appendChild(div);
-        });
-    }
+/* ============================================
+   途中下車をリストに追加
+============================================ */
+function addStops() {
+    const selected = Array.from(
+        document.getElementById("stopCandidates").selectedOptions
+    ).map(o => o.value);
 
+    const container = document.getElementById("sortableStops");
 
-    /******************************************
-     * ルート検索
-     *****************************************/
-    async function calculateRoute() {
-        const start = document.getElementById("startStation").value;
-        const goal  = document.getElementById("goalStation").value;
+    selected.forEach(st => {
+        const div = document.createElement("div");
+        div.className = "stop-item";
+        div.dataset.station = st;
 
-        // 並び替え後の並び順を取得
-        const stopDivs = document.querySelectorAll("#sortableStops .stop-item");
-        const stops = Array.from(stopDivs).map(div => div.dataset.station);
-
-        const url = `/hankyu/calc?start=${encodeURIComponent(start)}&goal=${encodeURIComponent(goal)}&stops=${encodeURIComponent(stops.join(","))}`;
-
-        const data = await fetch(url).then(r => r.json());
-
-        const box = document.getElementById("result");
-        box.style.display = "block";
-
-        if (data.error) {
-            box.innerHTML = `<b>エラー：</b> ${data.error}`;
-            return;
-        }
-
-        let html = `<h3>検索結果</h3>`;
-        html += `<p><b>旅程：</b> ${data.journey_order.join(" → ")}</p>`;
-        html += `<p><b>合計運賃：</b> ${data.total_fare} 円</p>`;
-        html += `<p><b>おすすめ：</b> ${data.recommendation}</p>`;
-
-        html += `<h4>区間詳細</h4>`;
-        data.details.forEach(d => {
-            html += `
-                <div style="margin-bottom:10px;">
-                    <b>${d.start} → ${d.goal}</b><br>
-                    経路：${d.route.join(" → ")}<br>
-                    区間数：${d.sections}<br>
-                    運賃：${d.fare}円
-                </div>
-            `;
-        });
-
-        box.innerHTML = html;
-            // LINEに送るテキスト形式（ユーザーに見やすい形）
-        let text = `【阪急ルート検索結果】
-
-        旅程：
-        ${data.journey_order.join(" → ")}
-
-        合計運賃：${data.total_fare}円
-        1日乗車券：${data.one_day_pass}円
-        おすすめ：${data.recommendation}
-
-        --- 区間詳細 ---
+        div.innerHTML = `
+            <span>${st}</span>
+            <button class="delete-stop" onclick="removeStop(this)">×</button>
         `;
+        container.appendChild(div);
+    });
+}
 
-        data.details.forEach(d => {
-            text += `
-        ${d.start} → ${d.goal}
-        経路：${d.route.join(" → ")}
-        運賃：${d.fare}円
+function removeStop(btn) {
+    btn.parentElement.remove();
+}
+
+/* ============================================
+   検索実行（途中の駅は表示しない）
+============================================ */
+async function calculateRoute() {
+    const BASE = window.location.origin;
+
+    const start = document.getElementById("startStation").value;
+    const goal  = document.getElementById("goalStation").value;
+
+    const stopDivs = document.querySelectorAll("#sortableStops .stop-item");
+    const stops = Array.from(stopDivs).map(div => div.dataset.station);
+
+    const url = `${BASE}/hankyu/calc?start=${encodeURIComponent(start)}&goal=${encodeURIComponent(goal)}&stops=${encodeURIComponent(stops.join(","))}`;
+    const data = await fetch(url).then(r => r.json());
+
+    const box = document.getElementById("result");
+    box.style.display = "block";
+
+    if (data.error) {
+        box.innerHTML = `<b>エラー：</b>${data.error}`;
+        return;
+    }
+
+    /* ---- HTML 表示（途中駅は非表示） ---- */
+    let html = `<h3>検索結果</h3>`;
+    html += `<p><b>旅程：</b> ${data.journey_order.join(" → ")}</p>`;
+    html += `<p><b>合計運賃：</b> ${data.total_fare}円</p>`;
+    html += `<p><b>おすすめ：</b> ${data.recommendation}</p>`;
+
+    html += `<h4>区間詳細</h4>`;
+    data.details.forEach(d => {
+        html += `
+            <div style="margin-bottom:10px;">
+                <b>${d.start} → ${d.goal}</b><br>
+                区間数：${d.sections}<br>
+                運賃：${d.fare}円
+            </div>
         `;
-        });
+    });
+    box.innerHTML = html;
 
-        lastResultText = text;
+    /* ---- LINE 送信用テキスト（途中駅なし） ---- */
+    let text = `【阪急ルート検索結果】
 
-        // 「LINEに送信」ボタンを表示
-        document.getElementById("sendMessageBtn").style.display = "block";
+旅程：
+${data.journey_order.join(" → ")}
 
+合計運賃：${data.total_fare}円
+おすすめ：${data.recommendation}
+
+--- 区間詳細 ---
+`;
+
+    data.details.forEach(d => {
+        text += `
+${d.start} → ${d.goal}
+運賃：${d.fare}円
+`;
+    });
+
+    lastResultText = text;
+
+    document.getElementById("sendMessageBtn").style.display = "block";
+}
+
+/* ============================================
+   LINE へのメッセージ送信
+============================================ */
+document.getElementById("sendMessageBtn").onclick = async () => {
+    try {
+        await liff.sendMessages([
+            { type: "text", text: lastResultText }
+        ]);
+        alert("LINEに送信しました！");
+    } catch (err) {
+        console.error("送信エラー:", err);
+        alert("送信に失敗しました");
     }
-    function removeStop(btn) {
-        const item = btn.parentElement;
-        item.remove();
-    }
-    
-    /******************************************
-     * 初期処理
-     *****************************************/
-    (async () => {
-        await initLIFF();
-        await loadStations();
-        setupSortable();
-    })();
-    
-    document.getElementById("sendMessageBtn").onclick = async () => {
-        try {
-            await liff.sendMessages([
-                {
-                    type: "text",
-                    text: lastResultText
-                }
-            ]);
-            alert("LINEに送信しました");
-        } catch (err) {
-            console.error("送信エラー:", err);
-            alert("送信に失敗しました（ログを確認）");
-        }
-    };
+};
 
+/* ============================================
+   初期起動
+============================================ */
+(async () => {
+    await initLIFF();
+    loadLines();
+    setupSortable();
+})();
 </script>
 
 </body>
