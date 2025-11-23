@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8" />
-    <title>阪急ルート検索（LIFF）</title>
+    <title>阪急ルート検索 (LIFF)</title>
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -13,271 +13,339 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-            padding: 15px;
-            background: #f4f4f4;
+        :root {
+            --hankyu-maroon: #73212B;
+            --hankyu-gold: #C9A66B;
+            --bg-light: #F9F5F2;
         }
-        .card { background: #fff; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
-        select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: 1px solid #ccc; }
-        button { background: #06c755; color: white; font-weight: bold; }
+
+        body {
+            font-family: "Helvetica Neue", "Hiragino Sans", "Noto Sans JP", sans-serif;
+            background: linear-gradient(180deg, #faf7f5 0%, #f3efed 100%);
+            padding: 16px;
+            color: #333;
+        }
+
+        h2 {
+            background: var(--hankyu-maroon);
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 18px;
+            border: 2px solid var(--hankyu-gold);
+        }
+
+        label {
+            font-weight: 600;
+            margin-top: 14px;
+            display: block;
+            color: var(--hankyu-maroon);
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            border-radius: 8px;
+            border: 1.5px solid #ccc;
+            background: #fff;
+            font-size: 15px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 14px;
+            border-radius: 6px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #fff;
+            background: var(--hankyu-maroon);
+            transition: 0.2s;
+        }
+        button:hover {
+            background: #8d2c38;
+        }
+
         .stop-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 12px;
-            background: #eee;
+            background: var(--bg-light);
+            border: 1.5px solid var(--hankyu-gold);
             border-radius: 8px;
-            margin: 5px 0;
-            cursor: grab;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--hankyu-maroon);
         }
+
         .delete-stop {
-            background: #ff4d4d;
+            background: #cc3333;
             border: none;
             color: white;
-            width: 28px;
-            height: 28px;
+            width: 26px;
+            height: 26px;
             border-radius: 6px;
             font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
         }
-        .delete-stop:active { background: #cc0000; }
+
+        .delete-stop:active { background: #a00000; }
+
+        #result {
+            border-left: 4px solid var(--hankyu-maroon);
+            padding-left: 10px;
+            margin-top: 18px;
+        }
+
+        .line-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .line-select-wrapper {
+            flex: 1 1 auto;
+        }
+        .line-tag {
+            flex: 0 0 auto;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+        }
     </style>
 </head>
 
 <body>
 
-<h2>阪急ルート検索（路線選択 + 途中下車並び替え）</h2>
+<h2>阪急ルート検索（路線別選択・阪急マルーン版）</h2>
 
 <div class="card">
 
-    <!-- ★ 出発駅（路線 → 駅） -->
+    <!-- 出発駅：路線 → 駅 -->
     <label>出発する路線：</label>
-    <select id="startLine" onchange="updateStartStations()"></select>
+    <div class="line-row">
+        <div class="line-select-wrapper">
+            <select id="startLine" onchange="updateStartStations()"></select>
+        </div>
+        <span id="startLineTag" class="line-tag"></span>
+    </div>
 
     <label>出発駅：</label>
     <select id="startStation"></select>
 
-    <!-- ★ 途中下車（路線 → 駅追加 → 並び替え） -->
-    <label>途中下車の路線：</label>
-    <select id="stopLine" onchange="updateStopStations()"></select>
-
-    <label>途中下車候補：</label>
-    <select id="stopCandidates" multiple size="5"></select>
-
-    <button onclick="addStops()">途中下車リストに追加</button>
-
-    <label>途中下車（ドラッグで順番変更・削除可）：</label>
-    <div id="sortableStops"
-         style="min-height:60px; background:#fafafa; border:1px solid #ddd; padding:10px; border-radius:8px;">
+    <!-- 途中下車：路線 → 駅候補 → 並び替え -->
+    <label>途中下車する路線：</label>
+    <div class="line-row">
+        <div class="line-select-wrapper">
+            <select id="stopLine" onchange="updateStopStations()"></select>
+        </div>
+        <span id="stopLineTag" class="line-tag"></span>
     </div>
 
-    <!-- ★ 到着駅（路線 → 駅） -->
+    <label>途中下車候補：</label>
+    <select id="stopCandidates" multiple size="6"></select>
+    <button onclick="addStops()">選択した駅を途中下車リストに追加</button>
+
+    <label>途中下車（ドラッグで順番変更）：</label>
+    <div id="sortableStops" style="min-height:60px; padding:10px; background:#fafafa; border-radius:8px;"></div>
+
+    <!-- 到着駅：路線 → 駅 -->
     <label>到着する路線：</label>
-    <select id="goalLine" onchange="updateGoalStations()"></select>
+    <div class="line-row">
+        <div class="line-select-wrapper">
+            <select id="goalLine" onchange="updateGoalStations()"></select>
+        </div>
+        <span id="goalLineTag" class="line-tag"></span>
+    </div>
 
     <label>到着駅：</label>
     <select id="goalStation"></select>
 
     <button onclick="calculateRoute()">検索する</button>
     <button id="sendMessageBtn" style="display:none; background:#1E90FF;">結果をLINEに送信</button>
-
 </div>
 
 <div id="result" class="card" style="display:none;"></div>
 
-
 <script>
-/* ============================================
-   ★ 路線ごとの駅データ（駅重複OK）
-============================================ */
-const LINES = {
-    "神戸本線": ["大阪梅田","中津","十三","神崎川","園田","塚口","武庫之荘","西宮北口","夙川","芦屋川","岡本","御影","六甲","王子公園","春日野道","神戸三宮"],
-    "宝塚本線": ["大阪梅田","中津","十三","三国","庄内","服部天神","曽根","岡町","豊中","蛍池","石橋阪大前","池田","川西能勢口","雲雀丘花屋敷","山本","中山観音","売布神社","清荒神","宝塚"],
-    "京都本線": ["大阪梅田","中津","十三（京都線）","南方","崇禅寺","淡路","上新庄","相川","正雀","摂津市","南茨木","茨木市","総持寺","富田","高槻市","上牧","水無瀬","大山崎","長岡天神","西山天王山","桂","西京極","西院","大宮","烏丸","京都河原町"],
-    "今津線": ["宝塚","宝塚南口","逆瀬川","小林","仁川","甲東園","門戸厄神","西宮北口","阪神国道","今津"],
-    "箕面線": ["石橋阪大前","桜井","牧落","箕面"],
-    "千里線": ["天神橋筋六丁目","柴島","淡路","下新庄","吹田","豊津","江坂","南千里","千里山","関大前","北千里"],
-    "嵐山線": ["桂","上桂","松尾大社","嵐山"],
-    "伊丹線": ["塚口","稲野","新伊丹","伊丹"],
-    "甲陽線": ["西宮北口","苦楽園口","甲陽園"]
-};
+    const ONE_DAY_PASS = 1300;
+    let lastResultText = "";
 
-let lastResultText = "";
+    const LINES = {
+        "神戸本線": ["大阪梅田","中津","十三","神崎川","園田","塚口","武庫之荘","西宮北口","夙川","芦屋川","岡本","御影","六甲","王子公園","春日野道","神戸三宮"],
+        "宝塚本線": ["大阪梅田","中津","十三","三国","庄内","服部天神","曽根","岡町","豊中","蛍池","石橋阪大前","池田","川西能勢口","雲雀丘花屋敷","山本","中山観音","売布神社","清荒神","宝塚"],
+        "京都本線": ["大阪梅田","中津","十三","南方","崇禅寺","淡路","上新庄","相川","正雀","摂津市","南茨木","茨木市","総持寺","富田","高槻市","上牧","水無瀬","大山崎","長岡天神","西山天王山","桂","西京極","西院","大宮","烏丸","京都河原町"],
+        "千里線": ["天神橋筋六丁目","柴島","淡路","下新庄","吹田","豊津","江坂","南千里","千里山","関大前","北千里"],
+        "箕面線": ["石橋阪大前","桜井","牧落","箕面"],
+        "今津線": ["宝塚","宝塚南口","逆瀬川","小林","仁川","甲東園","門戸厄神","西宮北口","阪神国道","今津"],
+        "伊丹線": ["塚口","稲野","新伊丹","伊丹"],
+        "甲陽線": ["西宮北口","苦楽園口","甲陽園"],
+        "嵐山線": ["桂","上桂","松尾大社","嵐山"]
+    };
 
-/* ============================================
-   LIFF 初期化
-============================================ */
-async function initLIFF() {
-    await liff.init({ liffId: "2008501171-EPnG284V" });
-    console.log("LIFF init 完了");
-}
+    const LINE_COLORS = {
+        "神戸本線": "#73212B",
+        "宝塚本線": "#2C9C6F",
+        "京都本線": "#D7443F",
+        "千里線": "#2563EB",
+        "箕面線": "#E0A800",
+        "今津線": "#7C3AED",
+        "伊丹線": "#A16207",
+        "甲陽線": "#DB2777",
+        "嵐山線": "#15803D"
+    };
 
-/* ============================================
-   Sortable 初期化
-============================================ */
-function setupSortable() {
-    Sortable.create(document.getElementById("sortableStops"), {
-        animation: 150,
-        ghostClass: "blue-background-class"
-    });
-}
-
-/* ============================================
-   路線一覧 → 路線プルダウン生成
-============================================ */
-function loadLines() {
-    const lines = Object.keys(LINES);
-    ["startLine", "stopLine", "goalLine"].forEach(id => {
-        const sel = document.getElementById(id);
-        lines.forEach(line => sel.add(new Option(line, line)));
-    });
-
-    updateStartStations();
-    updateStopStations();
-    updateGoalStations();
-}
-
-/* ============================================
-   路線 → 駅プルダウン更新
-============================================ */
-function updateStartStations() {
-    const line = document.getElementById("startLine").value;
-    const sel  = document.getElementById("startStation");
-    sel.innerHTML = "";
-    LINES[line].forEach(st => sel.add(new Option(st, st)));
-}
-
-function updateStopStations() {
-    const line = document.getElementById("stopLine").value;
-    const sel  = document.getElementById("stopCandidates");
-    sel.innerHTML = "";
-    LINES[line].forEach(st => sel.add(new Option(st, st)));
-}
-
-function updateGoalStations() {
-    const line = document.getElementById("goalLine").value;
-    const sel  = document.getElementById("goalStation");
-    sel.innerHTML = "";
-    LINES[line].forEach(st => sel.add(new Option(st, st)));
-}
-
-/* ============================================
-   途中下車をリストに追加
-============================================ */
-function addStops() {
-    const selected = Array.from(
-        document.getElementById("stopCandidates").selectedOptions
-    ).map(o => o.value);
-
-    const container = document.getElementById("sortableStops");
-
-    selected.forEach(st => {
-        const div = document.createElement("div");
-        div.className = "stop-item";
-        div.dataset.station = st;
-
-        div.innerHTML = `
-            <span>${st}</span>
-            <button class="delete-stop" onclick="removeStop(this)">×</button>
-        `;
-        container.appendChild(div);
-    });
-}
-
-function removeStop(btn) {
-    btn.parentElement.remove();
-}
-
-/* ============================================
-   検索実行（途中の駅は表示しない）
-============================================ */
-async function calculateRoute() {
-    const BASE = window.location.origin;
-
-    const start = document.getElementById("startStation").value;
-    const goal  = document.getElementById("goalStation").value;
-
-    const stopDivs = document.querySelectorAll("#sortableStops .stop-item");
-    const stops = Array.from(stopDivs).map(div => div.dataset.station);
-
-    const url = `${BASE}/hankyu/calc?start=${encodeURIComponent(start)}&goal=${encodeURIComponent(goal)}&stops=${encodeURIComponent(stops.join(","))}`;
-    const data = await fetch(url).then(r => r.json());
-
-    const box = document.getElementById("result");
-    box.style.display = "block";
-
-    if (data.error) {
-        box.innerHTML = `<b>エラー：</b>${data.error}`;
-        return;
+    async function initLIFF() {
+        await liff.init({ liffId: "2008501171-EPnG284V" });
     }
 
-    /* ---- HTML 表示（途中駅は非表示） ---- */
-    let html = `<h3>検索結果</h3>`;
-    html += `<p><b>旅程：</b> ${data.journey_order.join(" → ")}</p>`;
-    html += `<p><b>合計運賃：</b> ${data.total_fare}円</p>`;
-    html += `<p><b>おすすめ：</b> ${data.recommendation}</p>`;
+    function setupSortable() {
+        Sortable.create(document.getElementById("sortableStops"), { animation: 150 });
+    }
 
-    html += `<h4>区間詳細</h4>`;
-    data.details.forEach(d => {
-        html += `
-            <div style="margin-bottom:10px;">
-                <b>${d.start} → ${d.goal}</b><br>
-                区間数：${d.sections}<br>
-                運賃：${d.fare}円
-            </div>
-        `;
-    });
-    box.innerHTML = html;
+    function initLineSelectors() {
+        const lines = Object.keys(LINES);
 
-    /* ---- LINE 送信用テキスト（途中駅なし） ---- */
-    let text = `【阪急ルート検索結果】
+        lines.forEach(line => {
+            startLine.add(new Option(line, line));
+            stopLine.add(new Option(line, line));
+            goalLine.add(new Option(line, line));
+        });
+
+        updateStartStations();
+        updateStopStations();
+        updateGoalStations();
+    }
+
+    function updateStartStations() {
+        const line = startLine.value;
+        startStation.innerHTML = "";
+        LINES[line].forEach(st => startStation.add(new Option(st, st)));
+        startLineTag.textContent = line;
+        startLineTag.style.backgroundColor = LINE_COLORS[line];
+    }
+
+    function updateStopStations() {
+        const line = stopLine.value;
+        stopCandidates.innerHTML = "";
+        LINES[line].forEach(st => stopCandidates.add(new Option(st, st)));
+        stopLineTag.textContent = line;
+        stopLineTag.style.backgroundColor = LINE_COLORS[line];
+    }
+
+    function updateGoalStations() {
+        const line = goalLine.value;
+        goalStation.innerHTML = "";
+        LINES[line].forEach(st => goalStation.add(new Option(st, st)));
+        goalLineTag.textContent = line;
+        goalLineTag.style.backgroundColor = LINE_COLORS[line];
+    }
+
+    function addStops() {
+        const selected = Array.from(stopCandidates.selectedOptions).map(o => o.value);
+        selected.forEach(st => {
+            const div = document.createElement("div");
+            div.className = "stop-item";
+            div.dataset.station = st;
+            div.innerHTML = `
+                <span>${st}</span>
+                <button class="delete-stop" onclick="removeStop(this)">×</button>
+            `;
+            sortableStops.appendChild(div);
+        });
+    }
+
+    function removeStop(btn) {
+        btn.parentElement.remove();
+    }
+
+    async function calculateRoute() {
+        const BASE = window.location.origin;
+
+        const start = startStation.value;
+        const goal  = goalStation.value;
+
+        const stops = Array.from(document.querySelectorAll("#sortableStops .stop-item"))
+                           .map(div => div.dataset.station);
+
+        const url = `${BASE}/hankyu/calc?start=${encodeURIComponent(start)}&goal=${encodeURIComponent(goal)}&stops=${encodeURIComponent(stops.join(","))}`;
+        const data = await fetch(url).then(r => r.json());
+
+        result.style.display = "block";
+
+        if (data.error) {
+            result.innerHTML = `<b>エラー：</b> ${data.error}`;
+            return;
+        }
+
+        let recommendation;
+        if (data.total_fare < ONE_DAY_PASS) {
+            recommendation = "通常運賃の方が安いです";
+        } else if (data.total_fare > ONE_DAY_PASS) {
+            recommendation = "1日乗車券の方が安いです";
+        } else {
+            recommendation = "どちらも同じ金額です";
+        }
+
+        let html = `<h3>検索結果</h3>`;
+        html += `<p><b>旅程：</b> ${data.journey_order.join(" → ")}</p>`;
+        html += `<p><b>合計運賃：</b> ${data.total_fare}円</p>`;
+        html += `<p><b>1日乗車券：</b> ${ONE_DAY_PASS}円</p>`;
+        html += `<p><b>おすすめ：</b> ${recommendation}</p>`;
+
+        html += `<h4>区間詳細</h4>`;
+        data.details.forEach(d => {
+            html += `
+                <div style="margin-bottom:10px; border-left:3px solid var(--hankyu-maroon); padding-left:8px;">
+                    <b style="color:var(--hankyu-maroon);">${d.start} → ${d.goal}</b><br>
+                    距離：${d.distance_km} km<br>
+                    運賃：${d.fare}円
+                </div>
+            `;
+        });
+
+        result.innerHTML = html;
+
+        lastResultText = `【阪急ルート検索】
 
 旅程：
 ${data.journey_order.join(" → ")}
 
 合計運賃：${data.total_fare}円
-おすすめ：${data.recommendation}
-
---- 区間詳細 ---
+1日乗車券：${ONE_DAY_PASS}円
+おすすめ：${recommendation}
 `;
 
-    data.details.forEach(d => {
-        text += `
-${d.start} → ${d.goal}
-運賃：${d.fare}円
-`;
-    });
-
-    lastResultText = text;
-
-    document.getElementById("sendMessageBtn").style.display = "block";
-}
-
-/* ============================================
-   LINE へのメッセージ送信
-============================================ */
-document.getElementById("sendMessageBtn").onclick = async () => {
-    try {
-        await liff.sendMessages([
-            { type: "text", text: lastResultText }
-        ]);
-        alert("LINEに送信しました！");
-    } catch (err) {
-        console.error("送信エラー:", err);
-        alert("送信に失敗しました");
+        sendMessageBtn.style.display = "block";
     }
-};
 
-/* ============================================
-   初期起動
-============================================ */
-(async () => {
-    await initLIFF();
-    loadLines();
-    setupSortable();
-})();
+    sendMessageBtn.onclick = async () => {
+        await liff.sendMessages([{ type: "text", text: lastResultText }])
+        alert("LINEに送信しました！");
+    };
+
+    (async () => {
+        await initLIFF();
+        initLineSelectors();
+        setupSortable();
+    })();
 </script>
 
 </body>

@@ -1,250 +1,229 @@
-from flask import Flask, request, jsonify, render_template
-import pandas as pd
-import heapq
+from flask import Flask, request, jsonify, send_from_directory
+import csv
 
 app = Flask(__name__)
 
-# ============================================================
-# 1. 駅一覧（正式名称）
-# ============================================================
-STATIONS = [
-    # 神戸本線
-    "大阪梅田","中津","十三","神崎川","園田","塚口","武庫之荘","西宮北口","夙川",
-    "芦屋川","岡本","御影","六甲","王子公園","春日野道","神戸三宮",
+########################################
+# 1. CSV から駅間キロを読み込み（マトリクス形式）
+########################################
 
-    # 宝塚本線
-    "三国","庄内","服部天神","曽根","岡町","豊中","蛍池","石橋阪大前","池田",
-    "川西能勢口","雲雀丘花屋敷","山本","中山観音","売布神社","清荒神","宝塚",
+KILO_CSV = "hankyu_kilo_official.csv"   # プロジェクトのルートに置いておく
 
-    # 箕面線
-    "桜井","牧落","箕面",
+# (駅A, 駅B) -> km の辞書
+edge_km = {}
+ALL_STATIONS = []
 
-    # 京都本線
-    "南方","崇禅寺","淡路","上新庄","相川","正雀","摂津市","南茨木","茨木市",
-    "総持寺","富田","高槻市","上牧","水無瀬","大山崎","長岡天神",
-    "西山天王山","桂","西京極","西院","大宮","烏丸","京都河原町",
 
-    # 千里線
-    "天神橋筋六丁目","柴島","下新庄","吹田","豊津","江坂",
-    "南千里","千里山","関大前","北千里",
+def load_kilo_csv():
+    """駅×駅の距離マトリクスCSVを読み込んで edge_km を構築"""
+    global edge_km, ALL_STATIONS
+    edge_km = {}
+    ALL_STATIONS = []
 
-    # 今津線
-    "宝塚南口","逆瀬川","小林","仁川","甲東園","門戸厄神","阪神国道","今津",
+    try:
+        # Windows で作った CSV っぽいので cp932 で読む
+        with open(KILO_CSV, encoding="cp932") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
 
-    # 伊丹線
-    "稲野","新伊丹","伊丹",
+        if not rows:
+            print("CSV が空です")
+            return
 
-    # 甲陽線
-    "苦楽園口","甲陽園",
+        # 1行目：列ヘッダー（駅名）、先頭セルは空想定
+        header = rows[0]
+        col_stations = [name.strip() for name in header[1:]]
 
-    # 嵐山線
-    "上桂","松尾大社","嵐山",
-]
+        # 2行目以降：行ヘッダー + 距離
+        row_stations = []
 
-# ============================================================
-# 2. 線路接続データ（隣駅）
-# ============================================================
-EDGES = [
-    ("大阪梅田","中津"),("中津","十三"),
-    ("十三","神崎川"),("神崎川","園田"),("園田","塚口"),
-    ("塚口","武庫之荘"),("武庫之荘","西宮北口"),("西宮北口","夙川"),
-    ("夙川","芦屋川"),("芦屋川","岡本"),("岡本","御影"),("御影","六甲"),
-    ("六甲","王子公園"),("王子公園","春日野道"),("春日野道","神戸三宮"),
-
-    ("十三","三国"),("三国","庄内"),("庄内","服部天神"),("服部天神","曽根"),
-    ("曽根","岡町"),("岡町","豊中"),("豊中","蛍池"),("蛍池","石橋阪大前"),
-    ("石橋阪大前","池田"),("池田","川西能勢口"),("川西能勢口","雲雀丘花屋敷"),
-    ("雲雀丘花屋敷","山本"),("山本","中山観音"),("中山観音","売布神社"),
-    ("売布神社","清荒神"),("清荒神","宝塚"),
-
-    ("石橋阪大前","桜井"),("桜井","牧落"),("牧落","箕面"),
-
-    ("十三","南方"),("南方","崇禅寺"),("崇禅寺","淡路"),
-    ("淡路","上新庄"),("上新庄","相川"),("相川","正雀"),("正雀","摂津市"),
-    ("摂津市","南茨木"),("南茨木","茨木市"),("茨木市","総持寺"),
-    ("総持寺","富田"),("富田","高槻市"),("高槻市","上牧"),
-    ("上牧","水無瀬"),("水無瀬","大山崎"),("大山崎","長岡天神"),
-    ("長岡天神","西山天王山"),("西山天王山","桂"),
-    ("桂","西京極"),("西京極","西院"),("西院","大宮"),("大宮","烏丸"),
-    ("烏丸","京都河原町"),
-
-    ("天神橋筋六丁目","柴島"),("柴島","淡路"),("淡路","下新庄"),
-    ("下新庄","吹田"),("吹田","豊津"),("豊津","江坂"),
-    ("江坂","南千里"),("南千里","千里山"),("千里山","関大前"),("関大前","北千里"),
-
-    ("宝塚","宝塚南口"),("宝塚南口","逆瀬川"),("逆瀬川","小林"),
-    ("小林","仁川"),("仁川","甲東園"),("甲東園","門戸厄神"),
-    ("門戸厄神","西宮北口"),("西宮北口","阪神国道"),("阪神国道","今津"),
-
-    ("塚口","稲野"),("稲野","新伊丹"),("新伊丹","伊丹"),
-
-    ("西宮北口","苦楽園口"),("苦楽園口","甲陽園"),
-
-    ("桂","上桂"),("上桂","松尾大社"),("松尾大社","嵐山")
-]
-
-# ============================================================
-# 3. 駅間キロ数 Excel（営業キロマトリクス）ロード
-# ============================================================
-def load_hankyu_distance_matrix(path="hankyu_kilo_official.xlsx"):
-    df = pd.read_excel(path)
-
-    stations = df.iloc[:, 0].astype(str).tolist()
-    cols = df.columns.tolist()[1:]
-
-    dist = {}
-    for i, a in enumerate(stations):
-        for j, b in enumerate(cols):
-            km = df.iloc[i, j+1]
-            if pd.isna(km):
+        for r in rows[1:]:
+            if not r:
                 continue
-            dist[(a.strip(), b.strip())] = float(km)
+            row_station = r[0].strip()
+            if not row_station:
+                continue
+            row_stations.append(row_station)
 
-    return dist
+            # r[1:] がこの行の距離（列ヘッダーと対応）
+            for i, cell in enumerate(r[1:]):
+                if i >= len(col_stations):
+                    break
+                col_station = col_stations[i]
+                cell = cell.strip()
 
-DIST_TABLE = load_hankyu_distance_matrix()
+                if cell == "" or cell == "-":
+                    continue
 
+                try:
+                    km = float(cell)
+                except ValueError:
+                    continue
 
-# ============================================================
-# 4. グラフ構築（隣駅 × 距離は Excel）
-# ============================================================
-def build_graph():
-    graph = {s: [] for s in STATIONS}
+                # 双方向に登録
+                edge_km[(row_station, col_station)] = km
+                edge_km[(col_station, row_station)] = km
 
-    for a, b in EDGES:
-        km = DIST_TABLE.get((a, b))
-        if km is None:
-            km = 1.0  # 基本出ない
-        graph[a].append((b, km))
-        graph[b].append((a, km))
-    return graph
+        # 駅一覧は行ヘッダー + 列ヘッダーのユニーク集合
+        ALL_STATIONS = sorted(set(row_stations) | set(col_stations))
 
-GRAPH = build_graph()
+        print("CSV 読み込み成功:", len(ALL_STATIONS), "駅,", len(edge_km), "区間")
 
-
-# ============================================================
-# 5. ダイクストラ（距離最短）
-# ============================================================
-def dijkstra_distance(start, goal):
-    pq = [(0.0, start, [])]
-    visited = set()
-
-    while pq:
-        dist, station, path = heapq.heappop(pq)
-
-        if station == goal:
-            return dist, path + [station]
-
-        if station in visited:
-            continue
-        visited.add(station)
-
-        for next_st, km in GRAPH[station]:
-            heapq.heappush(pq, (dist + km, next_st, path + [station]))
-
-    return None, None
+    except Exception as e:
+        # Windowsコンソールで絵文字が死ぬので日本語だけにする
+        print("CSV 読み込み失敗:", e)
 
 
-# ============================================================
-# 6. 営業キロ別運賃（あなたが指定した区分）
-# ============================================================
-def calc_fare(km):
-    if km <= 4:
+# 起動時に一度読み込む
+load_kilo_csv()
+
+########################################
+# 2. 阪急運賃計算（営業キロ→運賃）
+########################################
+
+def calc_hankyu_fare(total_km: float) -> int:
+    """
+    営業キロ数から阪急運賃を返す。
+    区間ごとに適用（端数はそのまま距離として扱う）。
+    """
+    if total_km <= 6:
         return 170
-    elif km <= 9:
+    elif total_km <= 10:
         return 200
-    elif km <= 14:
+    elif total_km <= 16:
         return 240
-    elif km <= 19:
+    elif total_km <= 21:
         return 280
-    elif km <= 26:
-        return 290
-    elif km <= 33:
-        return 330
-    elif km <= 42:
-        return 390
-    elif km <= 51:
-        return 410
-    elif km <= 60:
+    elif total_km <= 26:
+        return 320
+    elif total_km <= 31:
+        return 360
+    elif total_km <= 36:
+        return 400
+    elif total_km <= 41:
+        return 440
+    elif total_km <= 46:
         return 480
-    elif km <= 70:
-        return 540
     else:
-        return 640
+        return 520
 
 
-# ============================================================
-# 7. API: 駅一覧
-# ============================================================
-@app.route("/hankyu/stations")
-def station_list():
-    return jsonify(sorted(STATIONS))
+########################################
+# 3. 区間の距離を取り出す（マトリクス辞書から）
+########################################
+
+def compute_segment_km(start: str, goal: str):
+    """
+    start→goal の営業キロを edge_km から返す。
+    データがなければ None。
+    """
+    key = (start, goal)
+    return edge_km.get(key)
 
 
-# ============================================================
-# 8. API: 区間の運賃計算（途中下車対応）
-# ============================================================
-@app.route("/hankyu/calc")
-def calc_multi():
+########################################
+# 4. 旅程全体（途中下車含む）の計算
+########################################
 
-    start = request.args.get("start")
-    goal  = request.args.get("goal")
-    stops_param = request.args.get("stops", "")
+def compute_journey(start: str, stops: list[str], goal: str):
+    """
+    [start] -> [途中下車…] -> [goal] の順に駅を回る旅程の
+    ・各区間の距離と運賃
+    ・合計運賃
+    ・一日券との比較
+    を計算して dict で返す。
+    """
+    order = [start] + stops + [goal]
 
-    if not start or not goal:
-        return jsonify({"error": "start と goal は必須"}), 400
-
-    stops = [s for s in stops_param.split(",") if s]
-    journey = [start] + stops + [goal]
-
-    total_km = 0.0
-    total_fare = 0
     details = []
+    total_fare = 0
+    total_km_sum = 0.0
 
-    for i in range(len(journey)-1):
-        a = journey[i]
-        b = journey[i+1]
+    for i in range(len(order) - 1):
+        s = order[i]
+        g = order[i + 1]
 
-        km, route = dijkstra_distance(a, b)
+        km = compute_segment_km(s, g)
+        if km is None:
+            return {"error": f"{s} → {g} のキロ数が CSV にありません"}
 
-        if route is None:
-            return jsonify({"error": f"{a} → {b} の経路が見つかりません"}), 404
-
-        fare = calc_fare(km)
-        total_km += km
+        fare = calc_hankyu_fare(km)
         total_fare += fare
+        total_km_sum += km
 
         details.append({
-            "start": a,
-            "goal": b,
-            "distance_km": round(km, 1),
+            "start": s,
+            "goal": g,
+            "distance_km": km,
             "fare": fare
         })
 
-    return jsonify({
-        "journey_order": journey,
-        "total_distance_km": round(total_km, 1),
+    ONE_DAY_PASS = 1300
+    if total_fare > ONE_DAY_PASS:
+        recommendation = "1日乗車券の方が安いです"
+    elif total_fare < ONE_DAY_PASS:
+        recommendation = "通常運賃の方が安いです"
+    else:
+        recommendation = "どちらも同じ金額です"
+
+    return {
+        "journey_order": order,
+        "details": details,
+        "total_km": total_km_sum,
         "total_fare": total_fare,
-        "details": details
-    })
+        "one_day_pass": ONE_DAY_PASS,
+        "recommendation": recommendation,
+    }
 
 
-# ============================================================
-# 9. UI（LIFF用 index.html）
-# ============================================================
+########################################
+# 5. API: 駅一覧
+########################################
+
+@app.route("/hankyu/stations")
+def get_stations():
+    # index.html の駅プルダウン用
+    return jsonify(ALL_STATIONS)
+
+
+########################################
+# 6. API: 運賃計算
+########################################
+
+@app.route("/hankyu/calc")
+def calc():
+    start = request.args.get("start")
+    goal = request.args.get("goal")
+    stops_raw = request.args.get("stops", "")
+
+    if not start or not goal:
+        return jsonify({"error": "start と goal は必須です"})
+
+    stops = [s for s in stops_raw.split(",") if s]
+
+    # 入力駅が CSV の駅一覧に存在するか簡単チェック
+    for st in [start, goal] + stops:
+        if st not in ALL_STATIONS:
+            return jsonify({"error": f"駅『{st}』はキロ表に存在しません"})
+
+    result = compute_journey(start, stops, goal)
+    return jsonify(result)
+
+
+########################################
+# 7. index.html を返す
+########################################
+
 @app.route("/")
 def index():
-    return render_template("index.html")
-
-@app.route("/routes")
-def debug_route():
-    return render_template("routes.html")
+    # 同じディレクトリにある index.html を返す
+    return send_from_directory(".", "templates/index.html")
 
 
-# ============================================================
-# 10. Flask 実行
-# ============================================================
+########################################
+# 8. ローカル実行用エントリ
+########################################
+
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # ローカルテスト用： http://127.0.0.1:8080/
+    app.run(host="0.0.0.0", port=8080, debug=True)
