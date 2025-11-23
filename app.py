@@ -149,26 +149,28 @@ def dijkstra_distance(start, goal):
 # 6. 営業キロ別運賃（あなたが指定した区分）
 # ============================================================
 def calc_fare(km):
-    if km <= 6:
+    if km <= 4:
         return 170
-    elif km <= 10:
+    elif km <= 9:
         return 200
-    elif km <= 16:
+    elif km <= 14:
         return 240
-    elif km <= 22:
+    elif km <= 19:
         return 280
-    elif km <= 28:
+    elif km <= 26:
+        return 290
+    elif km <= 33:
         return 330
-    elif km <= 34:
-        return 380
-    elif km <= 40:
-        return 430
-    elif km <= 46:
+    elif km <= 42:
+        return 390
+    elif km <= 51:
+        return 410
+    elif km <= 60:
         return 480
-    elif km <= 52:
-        return 530
+    elif km <= 70:
+        return 540
     else:
-        return 580
+        return 640
 
 
 # ============================================================
@@ -233,6 +235,10 @@ def calc_multi():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/routes")
+def debug_route():
+    return render_template("routes.html")
 
 
 # ============================================================
